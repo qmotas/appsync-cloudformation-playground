@@ -1,0 +1,177 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  GraphQLApi:
+    Type: AWS::AppSync::GraphQLApi
+    Properties:
+      AuthenticationType: API_KEY
+      Name: AppSync Playground(cfn)
+
+  ApiKey:
+    Type: AWS::AppSync::ApiKey
+    Properties:
+      ApiId:
+        Fn::GetAtt: [GraphQLApi, ApiId]
+      Expires: 1677510000 # 2023年2月28日 火曜日 00:00:00 GMT+09:00
+
+  DataSource1:
+    Type: AWS::AppSync::DataSource
+    Properties:
+      ApiId:
+        Fn::GetAtt: [GraphQLApi, ApiId]
+      Name: catstronauts_rest_api
+      Type: HTTP
+      HttpConfig:
+        Endpoint: https://odyssey-lift-off-rest-api.herokuapp.com
+
+  FunctionConfiguration1:
+    Type: AWS::AppSync::FunctionConfiguration
+    Properties:
+      ApiId:
+        Fn::GetAtt: [GraphQLApi, ApiId]
+      DataSourceName:
+        Fn::GetAtt: [DataSource1, Name]
+      FunctionVersion: '2023-02-14'
+      Name: getTracksForHome
+      Runtime:
+        Name: APPSYNC_JS
+        RuntimeVersion: 1.0.0
+      Code: |
+        import { util } from '@aws-appsync/utils';
+
+        export function request(ctx) {
+          return {
+            method: 'GET',
+            params: {
+              headers: { 'Content-Type': 'application/json' },
+            },
+            resourcePath: '/tracks',
+          };
+        }
+
+        export function response(ctx) {
+          const { error, result } = ctx;
+          if (error) {
+            ctx.stash.errors = ctx.stash.errors ?? [];
+            ctx.stash.errors.push(ctx.error);
+            return util.appendError(error.message, error.type, result);
+          }
+
+          if (result.statusCode === 200) {
+            return JSON.parse(result.body);
+          } else {
+            return util.appendError(result.body, result.statusCode);
+          }
+        }
+
+  FunctionConfiguration2:
+    Type: AWS::AppSync::FunctionConfiguration
+    Properties:
+      ApiId:
+        Fn::GetAtt: [GraphQLApi, ApiId]
+      DataSourceName:
+        Fn::GetAtt: [DataSource1, Name]
+      FunctionVersion: '2023-02-14'
+      Name: getAuthor
+      Runtime:
+        Name: APPSYNC_JS
+        RuntimeVersion: 1.0.0
+      Code: |
+        import { util } from '@aws-appsync/utils';
+
+        export function request(ctx) {
+          return {
+            method: 'GET',
+            params: {
+              headers: { 'Content-Type': 'application/json' },
+            },
+            resourcePath: `/author/${ctx.source.authorId}`,
+          };
+        }
+
+        export function response(ctx) {
+          const { error, result } = ctx;
+          if (error) {
+            ctx.stash.errors = ctx.stash.errors ?? [];
+            ctx.stash.errors.push(ctx.error);
+            return util.appendError(error.message, error.type, result);
+          }
+
+          if (result.statusCode === 200) {
+            return JSON.parse(result.body);
+          } else {
+            return util.appendError(result.body, result.statusCode);
+          }
+        }
+
+  GraphQLSchema:
+    Type: AWS::AppSync::GraphQLSchema
+    Properties:
+      ApiId:
+        Fn::GetAtt: [GraphQLApi, ApiId]
+      Definition: |
+        type Author {
+          id: ID!
+          name: String!
+          photo: String
+        }
+
+        type Query {
+          tracksForHome: [Track!]!
+        }
+
+        type Track {
+          id: ID!
+          title: String!
+          author: Author!
+          thumbnail: String
+          length: Int
+          modulesCount: Int
+        }
+
+  Resolver1:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId:
+        Fn::GetAtt: [GraphQLApi, ApiId]
+      TypeName: 'Query'
+      FieldName: 'tracksForHome'
+      Kind: PIPELINE
+      Runtime:
+        Name: APPSYNC_JS
+        RuntimeVersion: 1.0.0
+      Code: |
+        import {util} from '@aws-appsync/utils';
+
+        export function request(ctx) {
+            return {};
+        }
+
+        export function response(ctx) {
+            return ctx.prev.result;
+        }
+      PipelineConfig:
+        Functions: [Fn::GetAtt: [FunctionConfiguration1, FunctionId]]
+
+  Resolver2:
+    Type: AWS::AppSync::Resolver
+    Properties:
+      ApiId:
+        Fn::GetAtt: [GraphQLApi, ApiId]
+      TypeName: 'Track'
+      FieldName: 'author'
+      Kind: PIPELINE
+      Runtime:
+        Name: APPSYNC_JS
+        RuntimeVersion: 1.0.0
+      Code: |
+        import {util} from '@aws-appsync/utils';
+
+        export function request(ctx) {
+            return {};
+        }
+
+        export function response(ctx) {
+            return ctx.prev.result;
+        }
+      PipelineConfig:
+        Functions: [Fn::GetAtt: [FunctionConfiguration2, FunctionId]]
